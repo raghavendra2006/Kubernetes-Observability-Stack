@@ -26,16 +26,27 @@ spec:
         prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
     spec:
+      # Hardened security context for production-readiness
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532     # Default nonroot user in distroless/static-debian12
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: sample-app
-          # -------------------------------------------------------------------
-          # Option A: Build locally and use your own image:
-          #   docker build -t sample-observability-app:latest ./sample-app
-          #   Then for Minikube: eval $(minikube docker-env) before building
-          # Option B: Use the pre-built Python alternative (see below)
-          # -------------------------------------------------------------------
           image: sample-observability-app:latest
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 8080
               name: http

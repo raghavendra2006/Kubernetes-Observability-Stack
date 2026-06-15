@@ -73,13 +73,15 @@ spec:
       rules:
         # ----------------------------------------------------------------
         # Alert 3: High Application Error Rate
-        # Fires when >5% of requests return 5xx errors over 2 minutes
+        # Fires when >5% of requests return 5xx errors over 2 minutes.
+        # Dynamic calculation based on status label is used to prevent
+        # zero-initialization issues.
         # ----------------------------------------------------------------
         - alert: HighApplicationErrorRate
           expr: |
             (
               sum by (namespace, pod) (
-                rate(http_errors_total{namespace="sample-app"}[5m])
+                rate(http_requests_total{namespace="sample-app", status=~"5.."}[5m])
               )
               /
               sum by (namespace, pod) (

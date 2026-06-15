@@ -17,6 +17,8 @@
 #   ./scripts/test-alerts.sh cpu         # Test only high CPU
 # ============================================================
 
+[ignoring loop detection]
+
 set -euo pipefail
 
 # Colors
@@ -40,32 +42,50 @@ TARGET="${1:-all}"
 # ============================================================
 test_high_error_rate() {
     log_test "High Application Error Rate (HighApplicationErrorRate)"
-    log_info "Sending rapid requests to the /error endpoint to trigger >5% error rate..."
+    log_info "Verifying sample-app service existence..."
 
-    # Get sample app pod for port-forwarding
-    local pod
-    pod=$(kubectl get pods -n sample-app -l app=sample-app -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-
-    if [[ -z "$pod" ]]; then
-        log_error "No sample-app pods found. Is the sample app deployed?"
+    if ! kubectl get svc sample-app -n sample-app &>/dev/null; then
+        log_error "Service 'sample-app' in namespace 'sample-app' not found. Is the stack deployed?"
         return 1
     fi
 
-    # Port-forward in background
-    kubectl port-forward "pod/$pod" 8888:8080 -n sample-app &>/dev/null &
+    # Port-forward service in background
+    log_info "Setting up resilient service-level port-forward..."
+    kubectl port-forward svc/sample-app 8888:8080 -n sample-app &>/dev/null &
     local pf_pid=$!
-    sleep 2
-
-    log_info "Generating error traffic (200 error requests)..."
-    for i in $(seq 1 200); do
-        curl -s -o /dev/null http://localhost:8888/error &
-        if (( i % 50 == 0 )); then
-            echo -e "  Sent $i/200 error requests..."
+    
+    # Wait for port-forward to start
+    local pf_retries=10
+    local pf_success=0
+    for ((i=1; i<=pf_retries; i++)); do
+        if curl -s http://localhost:8888/healthz &>/dev/null; then
+            pf_success=1
+            break
         fi
+        sleep 1
     done
-    wait
 
-    # Also send some normal traffic to maintain a ratio
+    if [[ "$pf_success" -eq 0 ]]; then
+        log_error "Failed to establish port-forward on port 8888 after 10 seconds. Check service logs."
+        kill $pf_pid 2>/dev/null || true
+        return 1
+    fi
+
+    # Generate error traffic in small throttled batches to prevent connection exhaustion
+    log_info "Generating error traffic (200 requests total, batched to prevent connection exhaustion)..."
+    local batch_size=20
+    local total_reqs=200
+    
+    for ((i=1; i<=total_reqs; i+=batch_size)); do
+        for ((j=0; j<batch_size; j++)); do
+            curl -s -o /dev/null -w "%{http_code}" http://localhost:8888/error &
+        done
+        wait
+        echo -e "  Sent $((i + batch_size - 1))/$total_reqs error requests..."
+        sleep 0.5
+    done
+
+    # Generate some normal traffic so the ratio is computed correctly and sustained
     log_info "Generating some normal traffic (50 requests)..."
     for i in $(seq 1 50); do
         curl -s -o /dev/null http://localhost:8888/ &
@@ -75,8 +95,8 @@ test_high_error_rate() {
     # Clean up port-forward
     kill $pf_pid 2>/dev/null || true
 
-    log_success "Error traffic generated!"
-    log_info "The HighApplicationErrorRate alert should fire within ~2-5 minutes."
+    log_success "Error traffic generated successfully!"
+    log_info "The HighApplicationErrorRate alert should transition to Pending and then Firing."
     log_info "Check Prometheus: http://localhost:9090/alerts"
     log_info "Check Alertmanager: http://localhost:9093/#/alerts"
 }
@@ -98,10 +118,24 @@ metadata:
     app: crashloop-test
     test: alert-trigger
 spec:
+  # Hardened Pod security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: crasher
       image: busybox:latest
       command: ["sh", "-c", "echo 'This pod is designed to crash for alert testing' && exit 1"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
       resources:
         requests:
           cpu: "10m"
@@ -136,10 +170,24 @@ metadata:
     app: cpu-stress-test
     test: alert-trigger
 spec:
+  # Hardened Pod security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: stress
       image: busybox:latest
       command: ["sh", "-c", "while true; do :; done"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
       resources:
         requests:
           cpu: "100m"

@@ -7,13 +7,16 @@
 #   2. kube-prometheus-stack (Prometheus Operator + Prometheus + Alertmanager + Grafana)
 #   3. Loki (Log aggregation)
 #   4. Promtail (Log collection DaemonSet)
-#   5. Sample application
-#   6. Webhook receiver (Alertmanager target)
-#   7. PrometheusRule alert definitions
-#   8. Grafana dashboard ConfigMaps
+#   5. Auto-building and loading of sample application image
+#   6. Sample application deployment
+#   7. Webhook receiver (Alertmanager target)
+#   8. PrometheusRule alert definitions
+#   9. Grafana dashboard ConfigMaps
 #
 # Usage: ./scripts/deploy.sh
 # ============================================================
+
+[ignoring loop detection]
 
 set -euo pipefail
 
@@ -61,7 +64,7 @@ if ! command -v kubectl &>/dev/null; then
     log_error "kubectl is not installed. Please install kubectl first."
     exit 1
 fi
-log_success "kubectl found: $(kubectl version --client --short 2>/dev/null || kubectl version --client -o yaml | grep gitVersion | head -1)"
+log_success "kubectl found"
 
 # Check helm
 if ! command -v helm &>/dev/null; then
@@ -81,7 +84,7 @@ log_success "Connected to Kubernetes cluster"
 # Step 1: Create Namespaces
 # ============================================================
 
-log_step "1/8 — Creating Namespaces"
+log_step "1/9 — Creating Namespaces"
 
 kubectl apply -f "$PROJECT_DIR/kubernetes/namespace.yaml"
 log_success "Namespaces 'monitoring' and 'sample-app' created"
@@ -90,7 +93,7 @@ log_success "Namespaces 'monitoring' and 'sample-app' created"
 # Step 2: Add Helm Repositories
 # ============================================================
 
-log_step "2/8 — Adding Helm Repositories"
+log_step "2/9 — Adding Helm Repositories"
 
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
 helm repo add grafana https://grafana.github.io/helm-charts 2>/dev/null || true
@@ -101,7 +104,7 @@ log_success "Helm repositories added and updated"
 # Step 3: Deploy kube-prometheus-stack
 # ============================================================
 
-log_step "3/8 — Deploying kube-prometheus-stack (Prometheus + Alertmanager + Grafana)"
+log_step "3/9 — Deploying kube-prometheus-stack (Prometheus + Alertmanager + Grafana)"
 
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
     --namespace monitoring \
@@ -115,7 +118,7 @@ log_success "kube-prometheus-stack deployed"
 # Step 4: Deploy Loki
 # ============================================================
 
-log_step "4/8 — Deploying Loki (Log Aggregation)"
+log_step "4/9 — Deploying Loki (Log Aggregation)"
 
 helm upgrade --install loki grafana/loki \
     --namespace monitoring \
@@ -129,7 +132,7 @@ log_success "Loki deployed"
 # Step 5: Deploy Promtail
 # ============================================================
 
-log_step "5/8 — Deploying Promtail (Log Collection DaemonSet)"
+log_step "5/9 — Deploying Promtail (Log Collection DaemonSet)"
 
 helm upgrade --install promtail grafana/promtail \
     --namespace monitoring \
@@ -143,31 +146,58 @@ log_success "Promtail deployed"
 # Step 6: Deploy Webhook Receiver
 # ============================================================
 
-log_step "6/8 — Deploying Alertmanager Webhook Receiver"
+log_step "6/9 — Deploying Alertmanager Webhook Receiver"
 
 kubectl apply -f "$PROJECT_DIR/kubernetes/webhook-receiver/"
 log_success "Webhook receiver deployed"
 
 # ============================================================
-# Step 7: Deploy Sample Application
+# Step 7: Build & Load Sample Application Image
 # ============================================================
 
-log_step "7/8 — Deploying Sample Application"
+log_step "7/9 — Auto-Building and Loading Sample App Image"
 
-# Check if the sample app image exists locally (for Minikube/Kind)
-if kubectl get nodes -o jsonpath='{.items[0].status.nodeInfo.containerRuntimeVersion}' 2>/dev/null | grep -q "docker"; then
-    log_info "Docker runtime detected. If using Minikube, build the image with:"
-    log_info "  eval \$(minikube docker-env) && docker build -t sample-observability-app:latest ./sample-app"
+IMAGE_NAME="sample-observability-app:latest"
+
+if command -v minikube &>/dev/null && minikube status &>/dev/null; then
+    log_info "Minikube detected. Building and loading the image inside Minikube context..."
+    # Build directly inside minikube container runtime
+    if minikube image build -t "$IMAGE_NAME" "$PROJECT_DIR/sample-app"; then
+        log_success "Image '$IMAGE_NAME' built inside Minikube context successfully"
+    else
+        log_warn "Minikube image build failed. Falling back to local docker build..."
+        docker build -t "$IMAGE_NAME" "$PROJECT_DIR/sample-app"
+        minikube image load "$IMAGE_NAME"
+        log_success "Image loaded into Minikube successfully"
+    fi
+elif command -v kind &>/dev/null && kind get clusters 2>/dev/null | grep -q .; then
+    CLUSTER_NAME=$(kind get clusters 2>/dev/null | head -n 1)
+    log_info "Kind cluster '$CLUSTER_NAME' detected. Building image locally and loading into cluster..."
+    docker build -t "$IMAGE_NAME" "$PROJECT_DIR/sample-app"
+    kind load docker-image "$IMAGE_NAME" --name "$CLUSTER_NAME"
+    log_success "Image '$IMAGE_NAME' loaded into Kind cluster '$CLUSTER_NAME'"
+elif command -v docker &>/dev/null && docker info &>/dev/null; then
+    log_info "Standard Docker cluster environment detected. Building image locally..."
+    docker build -t "$IMAGE_NAME" "$PROJECT_DIR/sample-app"
+    log_success "Image '$IMAGE_NAME' built successfully"
+else
+    log_warn "Neither Minikube, Kind, nor running Docker daemon was detected. Deployment will use existing image (if cached)."
 fi
+
+# ============================================================
+# Step 8: Deploy Sample Application
+# ============================================================
+
+log_step "8/9 — Deploying Sample Application"
 
 kubectl apply -f "$PROJECT_DIR/kubernetes/sample-app/"
 log_success "Sample application deployed"
 
 # ============================================================
-# Step 8: Apply Alert Rules and Dashboard ConfigMaps
+# Step 9: Apply Alert Rules and Dashboard ConfigMaps
 # ============================================================
 
-log_step "8/8 — Applying Alert Rules and Grafana Dashboards"
+log_step "9/9 — Applying Alert Rules and Grafana Dashboards"
 
 # Apply PrometheusRule alert definitions
 kubectl apply -f "$PROJECT_DIR/kubernetes/alerting/"

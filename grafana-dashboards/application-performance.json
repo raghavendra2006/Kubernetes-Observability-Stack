@@ -112,7 +112,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "100 * sum(rate(http_errors_total{namespace=\"$namespace\"}[5m])) / sum(rate(http_requests_total{namespace=\"$namespace\"}[5m])) or vector(0)",
+          "expr": "100 * sum(rate(http_requests_total{namespace=\"$namespace\", status=~\"5..\"}[5m])) / sum(rate(http_requests_total{namespace=\"$namespace\"}[5m])) or vector(0)",
           "legendFormat": "Error %",
           "refId": "A"
         }
@@ -211,7 +211,7 @@
         {
           "targetBlank": true,
           "title": "View Logs in Loki",
-          "url": "/explore?orgId=1&left={\"datasource\":\"Loki\",\"queries\":[{\"expr\":\"{namespace=\\\"${namespace}\\\", pod=~\\\"${pod:pipe}\\\"}\",\"refId\":\"A\"}],\"range\":{\"from\":\"${__from}\",\"to\":\"${__to}\"}}"
+          "url": "/explore?orgId=1&left={\"datasource\":\"Loki\",\"queries\":[{\"expr\":\"{namespace=\\\"${namespace}\\\", pod=~\\\"${pod:pipe}\\\"} | json\",\"refId\":\"A\"}],\"range\":{\"from\":\"${__from}\",\"to\":\"${__to}\"}}"
         }
       ],
       "options": {
@@ -274,7 +274,7 @@
         {
           "targetBlank": true,
           "title": "View Logs in Loki",
-          "url": "/explore?orgId=1&left={\"datasource\":\"Loki\",\"queries\":[{\"expr\":\"{namespace=\\\"${namespace}\\\", pod=~\\\"${pod:pipe}\\\"}\",\"refId\":\"A\"}],\"range\":{\"from\":\"${__from}\",\"to\":\"${__to}\"}}"
+          "url": "/explore?orgId=1&left={\"datasource\":\"Loki\",\"queries\":[{\"expr\":\"{namespace=\\\"${namespace}\\\", pod=~\\\"${pod:pipe}\\\"} | json\",\"refId\":\"A\"}],\"range\":{\"from\":\"${__from}\",\"to\":\"${__to}\"}}"
         }
       ],
       "options": {
@@ -344,7 +344,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "100 * sum(rate(http_errors_total{namespace=\"$namespace\", pod=~\"$pod\"}[5m])) / sum(rate(http_requests_total{namespace=\"$namespace\", pod=~\"$pod\"}[5m])) or vector(0)",
+          "expr": "100 * sum(rate(http_requests_total{namespace=\"$namespace\", pod=~\"$pod\", status=~\"5..\"}[5m])) / sum(rate(http_requests_total{namespace=\"$namespace\", pod=~\"$pod\"}[5m])) or vector(0)",
           "legendFormat": "Error %",
           "refId": "A"
         }
@@ -377,7 +377,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum by (path) (rate(http_errors_total{namespace=\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "expr": "sum by (path) (rate(http_requests_total{namespace=\"$namespace\", pod=~\"$pod\", status=~\"5..\"}[5m]))",
           "legendFormat": "{{ path }}",
           "refId": "A"
         }
@@ -439,12 +439,12 @@
         "wrapLogMessage": true
       },
       "title": "Application Logs",
-      "description": "Logs from the sample application, filtered by namespace and pod. Use the 'Log Search' variable to filter by keyword.",
+      "description": "Logs from the sample application, filtered by namespace and pod. Structured JSON logging is automatically parsed into fields.",
       "type": "logs",
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "${lokidatasource}" },
-          "expr": "{namespace=\"$namespace\", pod=~\"$pod\"} |= \"$logsearch\"",
+          "expr": "{namespace=\"$namespace\", pod=~\"$pod\"} | json |= \"$logsearch\"",
           "legendFormat": "",
           "refId": "A"
         }
@@ -705,5 +705,5 @@
   "timezone": "browser",
   "title": "Application Performance",
   "uid": "app-performance",
-  "version": 1
+  "version": 2
 }

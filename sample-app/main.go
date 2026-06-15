@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"os"
@@ -75,20 +75,36 @@ func instrumentHandler(path string, next http.HandlerFunc) http.HandlerFunc {
 		defer activeConnections.Dec()
 
 		start := time.Now()
-		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		sw := &statusWriter{ResponseWriter: w}
 		next(sw, r)
 		duration := time.Since(start).Seconds()
 
-		statusStr := fmt.Sprintf("%d", sw.status)
+		// If no status was written, default to 200 OK
+		status := sw.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+
+		statusStr := fmt.Sprintf("%d", status)
 		httpRequestsTotal.WithLabelValues(r.Method, path, statusStr).Inc()
 		httpRequestDuration.WithLabelValues(r.Method, path).Observe(duration)
 
-		if sw.status >= 500 {
+		if status >= 500 {
 			httpErrorsTotal.WithLabelValues(r.Method, path).Inc()
+			slog.Error("request processed with error",
+				slog.String("method", r.Method),
+				slog.String("path", path),
+				slog.Int("status", status),
+				slog.Float64("duration_sec", duration),
+			)
+		} else {
+			slog.Info("request processed successfully",
+				slog.String("method", r.Method),
+				slog.String("path", path),
+				slog.Int("status", status),
+				slog.Float64("duration_sec", duration),
+			)
 		}
-
-		log.Printf("method=%s path=%s status=%d duration=%.4fs",
-			r.Method, path, sw.status, duration)
 	}
 }
 
@@ -100,6 +116,13 @@ type statusWriter struct {
 func (w *statusWriter) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusWriter) Write(b []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.ResponseWriter.Write(b)
 }
 
 // ---------- Handlers ----------
@@ -124,16 +147,20 @@ func handleReadyz(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleError(w http.ResponseWriter, r *http.Request) {
-	log.Println("ERROR: Simulated internal server error triggered via /error endpoint")
+	slog.Warn("simulated error endpoint triggered",
+		slog.String("remote_addr", r.RemoteAddr),
+	)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusInternalServerError)
 	fmt.Fprint(w, `{"error": "simulated internal server error", "code": 500}`)
 }
 
 func handleSlow(w http.ResponseWriter, r *http.Request) {
-	// Simulate a slow response between 2-5 seconds
 	delay := time.Duration(2000+rand.Intn(3000)) * time.Millisecond
-	log.Printf("WARN: Slow endpoint called, delaying response by %v", delay)
+	slog.Warn("slow endpoint triggered",
+		slog.Duration("delay", delay),
+		slog.String("remote_addr", r.RemoteAddr),
+	)
 	time.Sleep(delay)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -141,14 +168,21 @@ func handleSlow(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePanic(w http.ResponseWriter, r *http.Request) {
-	log.Println("CRITICAL: Panic endpoint triggered — this will crash the container if not recovered")
-	// This endpoint can be used to test CrashLoopBackOff alerts
+	slog.Error("panic endpoint triggered, crashing container immediately",
+		slog.String("remote_addr", r.RemoteAddr),
+	)
 	os.Exit(1)
 }
 
 // ---------- Main ----------
 
 func main() {
+	// Initialize structured slog JSON logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -175,10 +209,13 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	log.Printf("INFO: Sample observability app starting on port %s", port)
-	log.Printf("INFO: Endpoints: / /healthz /readyz /error /slow /panic /metrics")
+	slog.Info("sample observability app starting",
+		slog.String("port", port),
+		slog.String("version", "1.0.0"),
+	)
 
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("FATAL: Server failed to start: %v", err)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		slog.Error("server failed to start", slog.Any("error", err))
+		os.Exit(1)
 	}
 }
