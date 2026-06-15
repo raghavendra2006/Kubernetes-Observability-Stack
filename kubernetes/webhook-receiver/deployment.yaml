@@ -94,6 +94,9 @@ spec:
             - containerPort: 9095
               name: http
               protocol: TCP
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
           # Container-level security context (read-only filesystem, dropped privileges)
           securityContext:
             allowPrivilegeEscalation: false
@@ -104,6 +107,9 @@ spec:
             capabilities:
               drop:
                 - ALL
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
           resources:
             requests:
               cpu: "10m"
@@ -125,4 +131,7 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
       restartPolicy: Always

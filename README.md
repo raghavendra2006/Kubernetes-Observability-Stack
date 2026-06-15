@@ -90,19 +90,13 @@ kubectl cluster-info
 
 ## 🚀 Deployment
 
-### Option A: Automated (Recommended)
+Simply run the deployment script. It will automatically detect your local cluster environment (Minikube or Kind), build the container images, load them into the cluster runtime, and deploy the entire stack:
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/Kubernetes-Observability-Stack.git
-cd Kubernetes-Observability-Stack
-
-# Build the sample app image (if using Minikube)
-eval $(minikube docker-env)
-docker build -t sample-observability-app:latest ./sample-app
-
-# Deploy everything
+# Set execute permissions
 chmod +x scripts/*.sh
+
+# Run the deployment script
 ./scripts/deploy.sh
 ```
 
@@ -220,7 +214,7 @@ The dashboards implement correlation through:
 3. Observe the error rate spike in the "Request Rate by Status Code" panel
 4. Click the spike → select "View Logs in Loki"
 5. The Explore view opens with `{namespace="sample-app"}` and the correct time range
-6. You should see the `ERROR: Simulated internal server error` log lines
+6. You should see the structured JSON error log lines (containing `"level":"ERROR"` and `"status":500`) parsed and highlighted.
 
 ---
 

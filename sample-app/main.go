@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"math/rand"
 	"net/http"
 	"os"
+	"os/signal"
+	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -32,14 +36,6 @@ var (
 		[]string{"method", "path"},
 	)
 
-	httpErrorsTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "http_errors_total",
-			Help: "Total number of HTTP errors (5xx responses).",
-		},
-		[]string{"method", "path"},
-	)
-
 	appInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "app_info",
@@ -59,12 +55,11 @@ var (
 func init() {
 	prometheus.MustRegister(httpRequestsTotal)
 	prometheus.MustRegister(httpRequestDuration)
-	prometheus.MustRegister(httpErrorsTotal)
 	prometheus.MustRegister(appInfo)
 	prometheus.MustRegister(activeConnections)
 
-	// Set application info
-	appInfo.WithLabelValues("1.0.0", "1.22").Set(1)
+	// Set application info — go_version from runtime, not hardcoded
+	appInfo.WithLabelValues("1.0.0", runtime.Version()).Set(1)
 }
 
 // ---------- Middleware ----------
@@ -90,15 +85,14 @@ func instrumentHandler(path string, next http.HandlerFunc) http.HandlerFunc {
 		httpRequestDuration.WithLabelValues(r.Method, path).Observe(duration)
 
 		if status >= 500 {
-			httpErrorsTotal.WithLabelValues(r.Method, path).Inc()
-			slog.Error("request processed with error",
+			slog.Error("request completed",
 				slog.String("method", r.Method),
 				slog.String("path", path),
 				slog.Int("status", status),
 				slog.Float64("duration_sec", duration),
 			)
 		} else {
-			slog.Info("request processed successfully",
+			slog.Info("request completed",
 				slog.String("method", r.Method),
 				slog.String("path", path),
 				slog.Int("status", status),
@@ -212,10 +206,33 @@ func main() {
 	slog.Info("sample observability app starting",
 		slog.String("port", port),
 		slog.String("version", "1.0.0"),
+		slog.String("go_version", runtime.Version()),
 	)
 
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		slog.Error("server failed to start", slog.Any("error", err))
+	// Graceful shutdown: trap SIGTERM/SIGINT (Kubernetes sends SIGTERM on pod termination)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	// Start server in a goroutine
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("server failed to start", slog.Any("error", err))
+			os.Exit(1)
+		}
+	}()
+
+	// Block until shutdown signal
+	<-ctx.Done()
+	slog.Info("shutdown signal received, draining connections...")
+
+	// Give in-flight requests up to 15 seconds to complete
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		slog.Error("server forced to shutdown", slog.Any("error", err))
 		os.Exit(1)
 	}
+
+	slog.Info("server shutdown complete")
 }

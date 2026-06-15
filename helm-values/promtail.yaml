@@ -61,6 +61,11 @@ config:
               - __meta_kubernetes_pod_phase
             action: drop
             regex: (Failed|Succeeded)
+          # Exclude sample-app logs to prevent duplication (scraped by kubernetes-pods-app job)
+          - source_labels:
+              - __meta_kubernetes_namespace
+            action: drop
+            regex: sample-app
           # Set the pod name as a label
           - source_labels:
               - __meta_kubernetes_pod_name

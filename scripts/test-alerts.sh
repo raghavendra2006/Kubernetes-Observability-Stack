@@ -17,8 +17,6 @@
 #   ./scripts/test-alerts.sh cpu         # Test only high CPU
 # ============================================================
 
-[ignoring loop detection]
-
 set -euo pipefail
 
 # Colors
@@ -128,7 +126,7 @@ spec:
       type: RuntimeDefault
   containers:
     - name: crasher
-      image: busybox:latest
+      image: busybox:1.36.1
       command: ["sh", "-c", "echo 'This pod is designed to crash for alert testing' && exit 1"]
       securityContext:
         allowPrivilegeEscalation: false
@@ -180,7 +178,7 @@ spec:
       type: RuntimeDefault
   containers:
     - name: stress
-      image: busybox:latest
+      image: busybox:1.36.1
       command: ["sh", "-c", "while true; do :; done"]
       securityContext:
         allowPrivilegeEscalation: false

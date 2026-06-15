@@ -190,8 +190,10 @@ grafana:
   enabled: true
 
   # Admin credentials
-  adminUser: admin
-  adminPassword: observability-admin
+  admin:
+    existingSecret: grafana-admin-credentials
+    userKey: admin-user
+    passwordKey: admin-password
 
   # Persistent storage
   persistence:
@@ -233,6 +235,7 @@ grafana:
   additionalDataSources:
     # Prometheus data source
     - name: Prometheus
+      uid: prometheus
       type: prometheus
       access: proxy
       url: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
@@ -244,6 +247,7 @@ grafana:
 
     # Loki data source with metrics-to-logs correlation
     - name: Loki
+      uid: loki
       type: loki
       access: proxy
       url: http://loki.monitoring.svc:3100

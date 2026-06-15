@@ -16,8 +16,6 @@
 # Usage: ./scripts/deploy.sh
 # ============================================================
 
-[ignoring loop detection]
-
 set -euo pipefail
 
 # Colors for output
@@ -84,10 +82,21 @@ log_success "Connected to Kubernetes cluster"
 # Step 1: Create Namespaces
 # ============================================================
 
-log_step "1/9 — Creating Namespaces"
+log_step "1/9 — Creating Namespaces and Secrets"
 
 kubectl apply -f "$PROJECT_DIR/kubernetes/namespace.yaml"
 log_success "Namespaces 'monitoring' and 'sample-app' created"
+
+# Create Grafana admin credentials secret if it doesn't exist
+if ! kubectl get secret grafana-admin-credentials -n monitoring &>/dev/null; then
+    log_info "Creating Grafana admin credentials secret..."
+    kubectl create secret generic grafana-admin-credentials -n monitoring \
+        --from-literal=admin-user="admin" \
+        --from-literal=admin-password="observability-admin"
+    log_success "Grafana admin credentials secret created"
+else
+    log_info "Grafana admin credentials secret already exists"
+fi
 
 # ============================================================
 # Step 2: Add Helm Repositories
