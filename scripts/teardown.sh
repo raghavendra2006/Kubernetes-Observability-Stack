@@ -22,9 +22,25 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 DELETE_PVCS=false
-if [[ "${1:-}" == "--delete-pvcs" ]]; then
-    DELETE_PVCS=true
-fi
+AUTO_CONFIRM=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --delete-pvcs)
+            DELETE_PVCS=true
+            shift
+            ;;
+        -y|--yes)
+            AUTO_CONFIRM=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--delete-pvcs] [-y|--yes]"
+            exit 1
+            ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -43,11 +59,13 @@ if [[ "$DELETE_PVCS" == "true" ]]; then
 fi
 
 echo ""
-read -p "Are you sure you want to proceed? (y/N): " -n 1 -r
-echo ""
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Aborted."
-    exit 0
+if [[ "$AUTO_CONFIRM" != "true" ]]; then
+    read -p "Are you sure you want to proceed? (y/N): " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 0
+    fi
 fi
 
 # ============================================================

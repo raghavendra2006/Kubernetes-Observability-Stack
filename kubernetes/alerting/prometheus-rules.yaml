@@ -30,7 +30,7 @@ spec:
               sum by (namespace, pod, container) (
                 kube_pod_container_resource_limits{resource="cpu", container!="", pod!=""}
               )
-            ) > 0.80
+            ) * 100 > 80
           for: 5m
           labels:
             severity: warning
@@ -87,7 +87,7 @@ spec:
               sum by (namespace, pod) (
                 rate(http_requests_total{namespace="sample-app"}[5m])
               )
-            ) > 0.05
+            ) * 100 > 5
           for: 2m
           labels:
             severity: critical
@@ -97,7 +97,7 @@ spec:
             description: >-
               Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has an
               error rate exceeding 5% over the last 5 minutes.
-              Current error rate: {{ printf "%.4f" $value }} (ratio of failed requests).
+              Current error rate: {{ printf "%.1f" $value }}%.
               Check application logs in Loki for details.
             runbook_url: "https://github.com/your-org/runbooks/blob/main/high-error-rate.md"
             dashboard_url: "http://grafana.monitoring.svc:3000/d/app-performance"
@@ -137,7 +137,7 @@ spec:
               sum by (namespace, pod, container) (
                 kube_pod_container_resource_limits{resource="memory", container!="", pod!=""}
               )
-            ) > 0.85
+            ) * 100 > 85
           for: 5m
           labels:
             severity: warning
@@ -147,4 +147,5 @@ spec:
             description: >-
               Container {{ $labels.container }} in pod {{ $labels.pod }}
               (namespace: {{ $labels.namespace }}) is using more than 85% of
-              its memory limit. Risk of OOMKill.
+              its memory limit. Current value: {{ printf "%.1f" $value }}%.
+              Risk of OOMKill.
