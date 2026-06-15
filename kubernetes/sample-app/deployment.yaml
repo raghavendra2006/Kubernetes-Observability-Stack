@@ -1,0 +1,70 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-app
+  namespace: sample-app
+  labels:
+    app: sample-app
+    app.kubernetes.io/name: sample-app
+    app.kubernetes.io/part-of: observability-stack
+    app.kubernetes.io/component: application
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sample-app
+  template:
+    metadata:
+      labels:
+        app: sample-app
+        app.kubernetes.io/name: sample-app
+        app.kubernetes.io/part-of: observability-stack
+      annotations:
+        # Enables automatic scraping by Prometheus via annotation-based discovery
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: sample-app
+          # -------------------------------------------------------------------
+          # Option A: Build locally and use your own image:
+          #   docker build -t sample-observability-app:latest ./sample-app
+          #   Then for Minikube: eval $(minikube docker-env) before building
+          # Option B: Use the pre-built Python alternative (see below)
+          # -------------------------------------------------------------------
+          image: sample-observability-app:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "8080"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30

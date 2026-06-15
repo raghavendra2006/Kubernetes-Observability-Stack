@@ -1,0 +1,94 @@
+---
+# Mock webhook receiver for Alertmanager notifications
+# This simple HTTP server logs all incoming POST requests, serving as
+# a test receiver to verify that alerts are properly routed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager-webhook-receiver
+  namespace: monitoring
+  labels:
+    app: alertmanager-webhook-receiver
+    app.kubernetes.io/name: alertmanager-webhook-receiver
+    app.kubernetes.io/part-of: observability-stack
+    app.kubernetes.io/component: alerting
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager-webhook-receiver
+  template:
+    metadata:
+      labels:
+        app: alertmanager-webhook-receiver
+        app.kubernetes.io/name: alertmanager-webhook-receiver
+    spec:
+      containers:
+        - name: webhook-receiver
+          # Using a lightweight Python HTTP server that logs POST bodies
+          image: python:3.12-slim
+          command:
+            - python3
+            - "-c"
+            - |
+              from http.server import HTTPServer, BaseHTTPRequestHandler
+              import json, sys, datetime
+
+              class WebhookHandler(BaseHTTPRequestHandler):
+                  def do_POST(self):
+                      content_length = int(self.headers.get('Content-Length', 0))
+                      body = self.rfile.read(content_length).decode('utf-8')
+                      timestamp = datetime.datetime.utcnow().isoformat()
+
+                      print(f"\n{'='*60}", flush=True)
+                      print(f"[{timestamp}] ALERT RECEIVED", flush=True)
+                      print(f"{'='*60}", flush=True)
+
+                      try:
+                          data = json.loads(body)
+                          for alert in data.get('alerts', []):
+                              status = alert.get('status', 'unknown')
+                              labels = alert.get('labels', {})
+                              annotations = alert.get('annotations', {})
+                              print(f"  Status:    {status}", flush=True)
+                              print(f"  Alert:     {labels.get('alertname', 'N/A')}", flush=True)
+                              print(f"  Severity:  {labels.get('severity', 'N/A')}", flush=True)
+                              print(f"  Namespace: {labels.get('namespace', 'N/A')}", flush=True)
+                              print(f"  Pod:       {labels.get('pod', 'N/A')}", flush=True)
+                              print(f"  Summary:   {annotations.get('summary', 'N/A')}", flush=True)
+                              print(f"  Details:   {annotations.get('description', 'N/A')}", flush=True)
+                              print(f"  ---", flush=True)
+                      except json.JSONDecodeError:
+                          print(f"  Raw body: {body}", flush=True)
+
+                      print(f"{'='*60}\n", flush=True)
+
+                      self.send_response(200)
+                      self.send_header('Content-Type', 'application/json')
+                      self.end_headers()
+                      self.wfile.write(b'{"status": "received"}')
+
+                  def do_GET(self):
+                      self.send_response(200)
+                      self.send_header('Content-Type', 'application/json')
+                      self.end_headers()
+                      self.wfile.write(b'{"status": "ok", "service": "alertmanager-webhook-receiver"}')
+
+                  def log_message(self, format, *args):
+                      pass  # Suppress default access logs
+
+              print("Alertmanager Webhook Receiver starting on port 9095...", flush=True)
+              server = HTTPServer(('0.0.0.0', 9095), WebhookHandler)
+              server.serve_forever()
+          ports:
+            - containerPort: 9095
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              cpu: "50m"
+              memory: "64Mi"
+      restartPolicy: Always

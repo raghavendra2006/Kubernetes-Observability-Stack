@@ -1,0 +1,175 @@
+# ============================================================
+# Promtail Helm Chart Values
+# ============================================================
+# Deploys Promtail as a DaemonSet to collect logs from every node.
+# Logs are enriched with Kubernetes metadata and shipped to Loki.
+#
+# Chart: grafana/promtail
+# Docs:  https://grafana.com/docs/loki/latest/clients/promtail/
+# ============================================================
+
+# ----------------------------------------------------------
+# DaemonSet Configuration
+# ----------------------------------------------------------
+daemonset:
+  enabled: true
+
+# ----------------------------------------------------------
+# Resource Limits
+# ----------------------------------------------------------
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# ----------------------------------------------------------
+# Promtail Configuration
+# ----------------------------------------------------------
+config:
+  # Loki endpoint
+  clients:
+    - url: http://loki.monitoring.svc:3100/loki/api/v1/push
+      tenant_id: ""
+      batchwait: 1s
+      batchsize: 1048576  # 1MB
+      timeout: 10s
+
+  # Positions file — tracks which log lines have been sent
+  positions:
+    filename: /run/promtail/positions.yaml
+
+  # Scrape configurations
+  snippets:
+    # -------------------------------------------------------
+    # Scrape Config 1: Pod Logs (via Kubernetes API discovery)
+    # -------------------------------------------------------
+    scrapeConfigs: |
+      - job_name: kubernetes-pods
+        pipeline_stages:
+          - cri: {}
+          - labeldrop:
+              - filename
+              - stream
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          # Only collect logs from pods that are running
+          - source_labels:
+              - __meta_kubernetes_pod_phase
+            action: drop
+            regex: (Failed|Succeeded)
+          # Set the pod name as a label
+          - source_labels:
+              - __meta_kubernetes_pod_name
+            target_label: pod
+          # Set the namespace as a label
+          - source_labels:
+              - __meta_kubernetes_namespace
+            target_label: namespace
+          # Set the container name as a label
+          - source_labels:
+              - __meta_kubernetes_pod_container_name
+            target_label: container
+          # Set the node name as a label
+          - source_labels:
+              - __meta_kubernetes_pod_node_name
+            target_label: node
+          # Set the app label if present
+          - source_labels:
+              - __meta_kubernetes_pod_label_app
+            target_label: app
+            regex: (.+)
+          # Set the app.kubernetes.io/name label if present
+          - source_labels:
+              - __meta_kubernetes_pod_label_app_kubernetes_io_name
+            target_label: app_name
+            regex: (.+)
+          # Use the pod UID and container name to construct the log path
+          - source_labels:
+              - __meta_kubernetes_pod_uid
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+            separator: /
+            replacement: /var/log/pods/*$1/*.log
+
+      - job_name: kubernetes-pods-app
+        pipeline_stages:
+          - cri: {}
+          - multiline:
+              firstline: '^\d{4}-\d{2}-\d{2}|^\[|^{'
+              max_wait_time: 3s
+          - labeldrop:
+              - filename
+              - stream
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - sample-app
+        relabel_configs:
+          - source_labels:
+              - __meta_kubernetes_pod_phase
+            action: drop
+            regex: (Failed|Succeeded)
+          - source_labels:
+              - __meta_kubernetes_pod_name
+            target_label: pod
+          - source_labels:
+              - __meta_kubernetes_namespace
+            target_label: namespace
+          - source_labels:
+              - __meta_kubernetes_pod_container_name
+            target_label: container
+          - source_labels:
+              - __meta_kubernetes_pod_node_name
+            target_label: node
+          - source_labels:
+              - __meta_kubernetes_pod_label_app
+            target_label: app
+            regex: (.+)
+          - source_labels:
+              - __meta_kubernetes_pod_uid
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+            separator: /
+            replacement: /var/log/pods/*$1/*.log
+
+# ----------------------------------------------------------
+# Volume Mounts (required for log access)
+# ----------------------------------------------------------
+extraVolumes:
+  - name: pods-logs
+    hostPath:
+      path: /var/log/pods
+  - name: docker-containers
+    hostPath:
+      path: /var/lib/docker/containers
+
+extraVolumeMounts:
+  - name: pods-logs
+    mountPath: /var/log/pods
+    readOnly: true
+  - name: docker-containers
+    mountPath: /var/lib/docker/containers
+    readOnly: true
+
+# ----------------------------------------------------------
+# Tolerations (run on all nodes including masters)
+# ----------------------------------------------------------
+tolerations:
+  - key: node-role.kubernetes.io/master
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+# ----------------------------------------------------------
+# Service Account
+# ----------------------------------------------------------
+serviceAccount:
+  create: true
+  name: promtail

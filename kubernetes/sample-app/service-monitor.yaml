@@ -1,0 +1,28 @@
+---
+# ServiceMonitor CRD — tells Prometheus Operator to scrape the sample app
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: sample-app
+  namespace: monitoring
+  labels:
+    app: sample-app
+    app.kubernetes.io/name: sample-app
+    app.kubernetes.io/part-of: observability-stack
+    release: kube-prometheus-stack  # Must match Prometheus Operator's serviceMonitorSelector
+spec:
+  # Select services in the sample-app namespace
+  namespaceSelector:
+    matchNames:
+      - sample-app
+  # Match services with label app=sample-app
+  selector:
+    matchLabels:
+      app: sample-app
+  # Define the scrape endpoint
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      honorLabels: true

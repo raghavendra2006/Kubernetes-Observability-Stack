@@ -1,0 +1,20 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sample-app
+  namespace: sample-app
+  labels:
+    app: sample-app
+    app.kubernetes.io/name: sample-app
+    app.kubernetes.io/part-of: observability-stack
+    app.kubernetes.io/component: application
+spec:
+  type: ClusterIP
+  selector:
+    app: sample-app
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

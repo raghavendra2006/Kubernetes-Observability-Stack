@@ -1,0 +1,18 @@
+---
+# Namespace for the observability stack components
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    app.kubernetes.io/part-of: observability-stack
+    purpose: monitoring
+---
+# Namespace for the sample application
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sample-app
+  labels:
+    app.kubernetes.io/part-of: observability-stack
+    purpose: application

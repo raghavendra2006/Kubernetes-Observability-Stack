@@ -1,0 +1,340 @@
+# ============================================================
+# kube-prometheus-stack Helm Chart Values
+# ============================================================
+# This file configures the Prometheus Operator, Prometheus Server,
+# Alertmanager, Grafana, kube-state-metrics, and node-exporter.
+#
+# Chart: prometheus-community/kube-prometheus-stack
+# Docs:  https://github.com/prometheus-community/helm-charts
+# ============================================================
+
+# ----------------------------------------------------------
+# Global
+# ----------------------------------------------------------
+fullnameOverride: ""
+namespaceOverride: "monitoring"
+
+# ----------------------------------------------------------
+# Prometheus Operator
+# ----------------------------------------------------------
+prometheusOperator:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ----------------------------------------------------------
+# Prometheus Server
+# ----------------------------------------------------------
+prometheus:
+  enabled: true
+  prometheusSpec:
+    # Scrape interval and evaluation interval
+    scrapeInterval: "15s"
+    evaluationInterval: "15s"
+
+    # Data retention
+    retention: 15d
+    retentionSize: "45GB"
+
+    # Persistent storage for metrics data
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+
+    # Resource limits
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+
+    # ServiceMonitor selector — match all ServiceMonitors across namespaces
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+
+    # PodMonitor selector — match all PodMonitors across namespaces
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+
+    # PrometheusRule selector — match all rules across namespaces
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector: {}
+    ruleNamespaceSelector: {}
+
+    # Enable annotation-based scraping for pods with prometheus.io/* annotations
+    additionalScrapeConfigs:
+      - job_name: "kubernetes-pods-annotation"
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          # Only scrape pods with prometheus.io/scrape=true annotation
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          # Override metrics path from annotation
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          # Override port from annotation
+          - source_labels:
+              [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          # Add namespace label
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          # Add pod name label
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+          # Add container name label
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            action: replace
+            target_label: container
+          # Add node name label
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            action: replace
+            target_label: node
+
+# ----------------------------------------------------------
+# Alertmanager
+# ----------------------------------------------------------
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    # Persistent storage
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+  # Alertmanager configuration
+  config:
+    global:
+      resolve_timeout: 5m
+      # SMTP config (commented out — enable for email notifications)
+      # smtp_smarthost: 'smtp.example.com:587'
+      # smtp_from: 'alertmanager@example.com'
+      # smtp_auth_username: 'alertmanager'
+      # smtp_auth_password: 'password'
+
+    # Route tree
+    route:
+      receiver: "webhook-receiver"
+      group_by: ["alertname", "namespace", "pod"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        # Critical alerts get sent immediately
+        - receiver: "webhook-receiver"
+          match:
+            severity: critical
+          group_wait: 10s
+          repeat_interval: 1h
+        # Warning alerts are batched
+        - receiver: "webhook-receiver"
+          match:
+            severity: warning
+          group_wait: 1m
+          repeat_interval: 4h
+
+    # Receivers
+    receivers:
+      - name: "webhook-receiver"
+        webhook_configs:
+          - url: "http://alertmanager-webhook-receiver.monitoring.svc.cluster.local:9095/webhook"
+            send_resolved: true
+            max_alerts: 10
+
+    # Inhibition rules — critical alerts suppress warnings for same alert
+    inhibit_rules:
+      - source_matchers:
+          - severity = critical
+        target_matchers:
+          - severity = warning
+        equal: ["alertname", "namespace", "pod"]
+
+# ----------------------------------------------------------
+# Grafana
+# ----------------------------------------------------------
+grafana:
+  enabled: true
+
+  # Admin credentials
+  adminUser: admin
+  adminPassword: observability-admin
+
+  # Persistent storage
+  persistence:
+    enabled: true
+    type: pvc
+    size: 10Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Install additional plugins
+  plugins:
+    - grafana-piechart-panel
+
+  # Grafana configuration
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s:%(http_port)s/"
+    security:
+      allow_embedding: true
+    auth.anonymous:
+      enabled: false
+    explore:
+      enabled: true
+    # Enable unified alerting
+    unified_alerting:
+      enabled: true
+    alerting:
+      enabled: false
+
+  # --------------------------------------------------------
+  # Data Sources — provisioned as code
+  # --------------------------------------------------------
+  additionalDataSources:
+    # Prometheus data source
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      url: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+      isDefault: true
+      editable: false
+      jsonData:
+        timeInterval: "15s"
+        httpMethod: POST
+
+    # Loki data source with metrics-to-logs correlation
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki.monitoring.svc:3100
+      editable: false
+      jsonData:
+        maxLines: 1000
+        derivedFields:
+          # Enable linking from Loki logs back to traces (if enabled later)
+          - datasourceUid: prometheus
+            matcherRegex: '"pod":"([^"]+)"'
+            name: Pod
+            url: '/explore?orgId=1&left={"datasource":"Prometheus","queries":[{"expr":"up{pod=\"${__value.raw}\"}"}]}'
+
+  # --------------------------------------------------------
+  # Dashboard Provisioning — load from ConfigMap
+  # --------------------------------------------------------
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: "custom-dashboards"
+          orgId: 1
+          folder: "Observability Stack"
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/custom
+
+  dashboardsConfigMaps:
+    custom: "grafana-custom-dashboards"
+
+  # --------------------------------------------------------
+  # Sidecar for dashboard discovery from ConfigMaps
+  # --------------------------------------------------------
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      folder: /var/lib/grafana/dashboards/sidecar
+      provider:
+        foldersFromFilesStructure: true
+    datasources:
+      enabled: true
+      label: grafana_datasource
+
+# ----------------------------------------------------------
+# kube-state-metrics
+# ----------------------------------------------------------
+kubeStateMetrics:
+  enabled: true
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# ----------------------------------------------------------
+# Node Exporter
+# ----------------------------------------------------------
+nodeExporter:
+  enabled: true
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+# ----------------------------------------------------------
+# Default Rules (built-in alerts from the chart)
+# ----------------------------------------------------------
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    general: true
+    k8s: true
+    kubeApiserverAvailability: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    node: true
+    prometheus: true

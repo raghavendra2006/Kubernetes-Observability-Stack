@@ -1,0 +1,20 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager-webhook-receiver
+  namespace: monitoring
+  labels:
+    app: alertmanager-webhook-receiver
+    app.kubernetes.io/name: alertmanager-webhook-receiver
+    app.kubernetes.io/part-of: observability-stack
+    app.kubernetes.io/component: alerting
+spec:
+  type: ClusterIP
+  selector:
+    app: alertmanager-webhook-receiver
+  ports:
+    - name: http
+      port: 9095
+      targetPort: http
+      protocol: TCP

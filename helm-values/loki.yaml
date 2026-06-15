@@ -1,0 +1,131 @@
+# ============================================================
+# Loki Helm Chart Values
+# ============================================================
+# Deploys Loki in monolithic (single-binary) mode for simplicity.
+# Suitable for single-cluster deployments with moderate log volume.
+#
+# Chart: grafana/loki
+# Docs:  https://grafana.com/docs/loki/latest/
+# ============================================================
+
+# ----------------------------------------------------------
+# Deployment Mode
+# ----------------------------------------------------------
+deploymentMode: SingleBinary
+
+# ----------------------------------------------------------
+# Loki Configuration
+# ----------------------------------------------------------
+loki:
+  # Authentication disabled for simplicity (enable for production multi-tenant)
+  auth_enabled: false
+
+  # Common configuration
+  commonConfig:
+    replication_factor: 1
+
+  # Schema configuration
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+  # Storage configuration — use local filesystem
+  storage:
+    type: filesystem
+
+  # Ingester configuration
+  ingester:
+    chunk_encoding: snappy
+    chunk_idle_period: 30m
+    chunk_block_size: 262144
+    chunk_retain_period: 1m
+
+  # Limits configuration
+  limits_config:
+    retention_period: 168h            # 7 days
+    ingestion_rate_mb: 10
+    ingestion_burst_size_mb: 20
+    max_query_length: 721h            # ~30 days
+    max_query_parallelism: 32
+    max_entries_limit_per_query: 5000
+    reject_old_samples: true
+    reject_old_samples_max_age: 168h
+
+  # Compactor for retention enforcement
+  compactor:
+    working_directory: /var/loki/compactor
+    compaction_interval: 10m
+    retention_enabled: true
+    retention_delete_delay: 2h
+    delete_request_store: filesystem
+
+  # Ruler (for LogQL alerting rules — optional)
+  rulerConfig:
+    storage:
+      type: local
+      local:
+        directory: /var/loki/rules
+    alertmanager_url: http://kube-prometheus-stack-alertmanager.monitoring.svc:9093
+
+# ----------------------------------------------------------
+# Single Binary Deployment
+# ----------------------------------------------------------
+singleBinary:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  persistence:
+    enabled: true
+    size: 20Gi
+
+# ----------------------------------------------------------
+# Disable components not needed in monolithic mode
+# ----------------------------------------------------------
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+
+# ----------------------------------------------------------
+# Gateway
+# ----------------------------------------------------------
+gateway:
+  enabled: false
+
+# ----------------------------------------------------------
+# Monitoring
+# ----------------------------------------------------------
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  lokiCanary:
+    enabled: false
+
+# ----------------------------------------------------------
+# Test
+# ----------------------------------------------------------
+test:
+  enabled: false
+
+# ----------------------------------------------------------
+# Chunksache (optional caching layer — disabled for simplicity)
+# ----------------------------------------------------------
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false

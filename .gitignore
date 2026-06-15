@@ -1,0 +1,59 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Go build artifacts
+sample-app/server
+sample-app/sample-observability-app
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test output
+*.test
+*.out
+coverage.txt
+
+# Dependency directories
+vendor/
+
+# Kubernetes secrets (never commit!)
+*-secret.yaml
+*.secret
+kubeconfig
+.kube/
+
+# Helm
+*.tgz
+charts/
+
+# Terraform (if used later)
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# Environment files
+.env
+.env.*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
