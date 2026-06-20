@@ -4,10 +4,6 @@ A **production-grade** observability platform for Kubernetes integrating **Prome
 
 ---
 
-> 🎥 **Note for Evaluators:** Please see [DEMO_SCRIPT.md](./DEMO_SCRIPT.md) for a complete, step-by-step walkthrough script for the video demonstration, showcasing end-to-end alert testing, architectural hardening, and log correlation.
-
----
-
 ## 📐 Architecture
 
 ```
