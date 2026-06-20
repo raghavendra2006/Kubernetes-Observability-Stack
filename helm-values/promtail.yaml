@@ -142,24 +142,8 @@ config:
             separator: /
             replacement: /var/log/pods/*$1/*.log
 
-# ----------------------------------------------------------
-# Volume Mounts (required for log access)
-# ----------------------------------------------------------
-extraVolumes:
-  - name: pods-logs
-    hostPath:
-      path: /var/log/pods
-  - name: docker-containers
-    hostPath:
-      path: /var/lib/docker/containers
-
-extraVolumeMounts:
-  - name: pods-logs
-    mountPath: /var/log/pods
-    readOnly: true
-  - name: docker-containers
-    mountPath: /var/lib/docker/containers
-    readOnly: true
+# NOTE: The Promtail chart already mounts /var/log/pods and /var/lib/docker/containers
+# by default. Do NOT add extraVolumes/extraVolumeMounts for these paths.
 
 # ----------------------------------------------------------
 # Tolerations (run on all nodes including masters)

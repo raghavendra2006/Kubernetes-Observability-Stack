@@ -189,6 +189,10 @@ alertmanager:
 grafana:
   enabled: true
 
+  # Disable the chart's auto-provisioned default Prometheus datasource
+  # to avoid conflict with our explicit additionalDataSources entry below.
+  defaultDatasourceEnabled: false
+
   # Admin credentials
   admin:
     existingSecret: grafana-admin-credentials
@@ -208,10 +212,6 @@ grafana:
     limits:
       cpu: 500m
       memory: 512Mi
-
-  # Install additional plugins
-  plugins:
-    - grafana-piechart-panel
 
   # Grafana configuration
   grafana.ini:
